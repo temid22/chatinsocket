@@ -19,7 +19,7 @@ const chatroomErrorDiv = document.getElementById('chatroom-error');
 
 // Initialize WebSocket connection
 function initializeWebSocket() {
-  socket = new WebSocket('ws://localhost:5000');
+  socket = new WebSocket('wss://chatinsocket.onrender.com/');
 
   socket.onopen = () => {
     console.log('WebSocket connection established');
