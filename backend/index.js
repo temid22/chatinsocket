@@ -9,14 +9,15 @@ dotenv.config();
 const PORT = 5000;
 
 // WebSocket server setup
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ host: '0.0.0.0', port: PORT });
 
-// Stored connected clients and chatrooms
+// Stored connected clients
 const connectedClients = new Map(); // Map<username, WebSocket>
-const chatrooms = new Map(); // Map<chatroomName, Set<username>>
+const activeUsers = new Set(); // Set of active users
+const chatHistory = new Map(); // Map<chatroomName, Array<{ from: string, message: string }>>
 
 // Rate limit
-const RATE_LIMIT = 5; // Max messages per seco`nd
+const RATE_LIMIT = 5; // Max messages per second
 const userMessageCounts = new Map();
 
 // Heartbeat interval (in milliseconds)
@@ -39,41 +40,33 @@ async function authenticate(username, password) {
 
 // Register user
 async function registerUser(username, password) {
+  // const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = new User({ username, password });
   await newUser.save();
   console.log('New user:', newUser);
 }
 
-// Create/Join chatroom
-function handleChatroom(ws, chatroomName, username) {
-  if (!chatrooms.has(chatroomName)) {
-    chatrooms.set(chatroomName, new Set());
-  }
-  chatrooms.get(chatroomName).add(username);
-  ws.send(JSON.stringify({ type: 'chatroom_joined', chatroomName }));
-  broadcastMessage(chatroomName, {
-    type: 'system_message',
-    message: `${username} joined the chatroom.`,
+// Broadcast active users to all clients
+function broadcastActiveUsers() {
+  const userList = Array.from(activeUsers);
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      client.send(JSON.stringify({ type: 'user_list', users: userList }));
+    }
   });
-  console.log(`${username} joined chatroom: ${chatroomName}`);
 }
 
-// Broadcast message to all users in the chatroom
-function broadcastMessage(chatroomName, message) {
-  const usersInChatroom = chatrooms.get(chatroomName);
-  if (usersInChatroom) {
-    usersInChatroom.forEach((username) => {
-      const clientWs = connectedClients.get(username);
-      if (clientWs) {
-        clientWs.send(JSON.stringify(message));
-      }
-    });
-  }
+// Function to generate a unique chatroom name
+function getChatroomName(user1, user2) {
+  const users = [user1, user2].sort(); // Sort usernames alphabetically
+  return users.join('-'); // Join with a hyphen
 }
 
 // Handle WebSocket connections
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   console.log('New client connected');
+  const clientIp = req.socket.remoteAddress;
+  console.log(`New client connected from IP: ${clientIp}`);
 
   // Set up heartbeat
   let heartbeatInterval;
@@ -90,20 +83,22 @@ wss.on('connection', (ws) => {
 
   ws.on('message', async (message) => {
     let data;
-    // Convert Buffer to string if necessary
     if (message instanceof Buffer) {
       data = JSON.parse(message.toString('utf8'));
     } else {
       data = JSON.parse(message);
     }
-    console.log('Received data:', data);
+    console.log(`Received message from ${clientIp}:`, data);
 
     if (data.type === 'login') {
       if (await authenticate(data.username, data.password)) {
         connectedClients.set(data.username, ws);
+        activeUsers.add(data.username);
+        ws.username = data.username;
         ws.send(
           JSON.stringify({ type: 'login_successfull', username: data.username })
         );
+        broadcastActiveUsers(); // Broadcast updated user list
       } else {
         ws.send(
           JSON.stringify({
@@ -124,14 +119,23 @@ wss.on('connection', (ws) => {
           })
         );
       }
-    } else if (data.type === 'join_chatroom') {
+    } else if (data.type === 'switch_chat') {
       if (!connectedClients.has(data.username)) {
         ws.send(
           JSON.stringify({ type: 'error', message: 'User not logged in' })
         );
         return;
       }
-      handleChatroom(ws, data.chatroomName, data.username);
+
+      const chatroomName = getChatroomName(data.username, data.recipient);
+      const history = chatHistory.get(chatroomName) || [];
+      ws.send(
+        JSON.stringify({
+          type: 'chat_history',
+          chatroomName,
+          messages: history,
+        })
+      );
     } else if (data.type === 'message') {
       if (!connectedClients.has(data.username)) {
         ws.send(
@@ -151,37 +155,46 @@ wss.on('connection', (ws) => {
         );
       } else {
         userMessageCounts.set(data.username, count + 1);
-        broadcastMessage(data.chatroomName, {
-          type: 'message',
-          from: data.username,
-          chatroomName: data.chatroomName,
-          message: data.message,
-        });
+
+        // Store the message in chat history
+        const chatroomName = getChatroomName(data.username, data.recipient);
+        const history = chatHistory.get(chatroomName) || [];
+        history.push({ from: data.username, message: data.message });
+        chatHistory.set(chatroomName, history);
+
+        // Send the message to the recipient
+        const recipientWs = connectedClients.get(data.recipient);
+        if (recipientWs) {
+          recipientWs.send(
+            JSON.stringify({
+              type: 'message',
+              from: data.username,
+              message: data.message,
+            })
+          );
+        }
+
+        // Send the message back to the sender
+        ws.send(
+          JSON.stringify({
+            type: 'message',
+            from: data.username,
+            message: data.message,
+          })
+        );
       }
     }
   });
 
   ws.on('close', () => {
-    // Handle disconnection
-    connectedClients.forEach((value, key) => {
-      if (value === ws) {
-        connectedClients.delete(key);
-        console.log(`${key} disconnected!`);
-
-        // Notify chatroom members
-        chatrooms.forEach((users, chatroomName) => {
-          if (users.has(key)) {
-            users.delete(key);
-            broadcastMessage(chatroomName, {
-              type: 'system_message',
-              message: `${key} left the chatroom.`,
-            });
-          }
-        });
-      }
-    });
+    if (ws.username) {
+      connectedClients.delete(ws.username);
+      activeUsers.delete(ws.username);
+      broadcastActiveUsers(); // Broadcast updated user list
+    }
 
     // Clear heartbeat interval
     clearInterval(heartbeatInterval);
+    console.log('Client disconnected');
   });
 });

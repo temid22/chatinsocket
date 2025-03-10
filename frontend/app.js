@@ -1,25 +1,29 @@
 let socket;
 let currentUser;
-let currentChatroom;
+let currentRecipient;
+const chatHistory = new Map(); // Map<recipient, Array<{ from: string, message: string }>>
 
 // DOM Elements
 const authSection = document.getElementById('auth-section');
-const chatroomSection = document.getElementById('chatroom-section');
+const chatroomSection = document.getElementById('chat-section');
 const usernameInput = document.getElementById('username');
 const passwordInput = document.getElementById('password');
 const loginBtn = document.getElementById('login-btn');
 const registerBtn = document.getElementById('register-btn');
-const chatroomNameInput = document.getElementById('chatroom-name');
-const createJoinBtn = document.getElementById('create-join-btn');
-const messageInput = document.getElementById('message-input');
+const messageBox = document.getElementById('message-box'); // Ensure this matches the HTML id
 const sendBtn = document.getElementById('send-btn');
 const messagesDiv = document.getElementById('messages');
 const authErrorDiv = document.getElementById('auth-error');
-const chatroomErrorDiv = document.getElementById('chatroom-error');
+const userListDiv = document.getElementById('user-list');
 
+// Function to generate a unique chatroom name
+function getChatroomName(user1, user2) {
+  const users = [user1, user2].sort(); // Sort usernames alphabetically
+  return users.join('-'); // Join with a hyphen
+}
 // Initialize WebSocket connection
 function initializeWebSocket() {
-  socket = new WebSocket('wss://chatinsocket.onrender.com/');
+  socket = new WebSocket('ws://127.0.0.1:5000'); // Replace with your backend URL
 
   socket.onopen = () => {
     console.log('WebSocket connection established');
@@ -32,7 +36,7 @@ function initializeWebSocket() {
     if (data.type === 'login_successfull') {
       currentUser = data.username;
       authSection.style.display = 'none';
-      chatroomSection.style.display = 'block';
+      chatroomSection.classList.add('visible'); // Add the 'visible' class
       authErrorDiv.textContent = '';
     } else if (data.type === 'login_failed') {
       authErrorDiv.textContent = data.message;
@@ -41,20 +45,25 @@ function initializeWebSocket() {
       authErrorDiv.textContent = '';
     } else if (data.type === 'registration_failed') {
       authErrorDiv.textContent = data.error;
-    } else if (data.type === 'chatroom_joined') {
-      currentChatroom = data.chatroomName;
-      chatroomErrorDiv.textContent = '';
-      alert(`Joined chatroom: ${data.chatroomName}`);
+    } else if (data.type === 'chat_history') {
+      // Load chat history for the selected recipient
+      chatHistory.set(data.chatroomName, data.messages);
+      displayMessages(data.messages);
     } else if (data.type === 'message') {
-      const messageElement = document.createElement('div');
-      messageElement.textContent = `${data.from}: ${data.message}`;
-      messagesDiv.appendChild(messageElement);
-    } else if (data.type === 'system_message') {
-      const messageElement = document.createElement('div');
-      messageElement.textContent = data.message;
-      messagesDiv.appendChild(messageElement);
+      // Add the message to the chat history
+      const chatroomName = getChatroomName(currentUser, data.from);
+      const history = chatHistory.get(chatroomName) || [];
+      history.push({ from: data.from, message: data.message });
+      chatHistory.set(chatroomName, history);
+
+      // Display the message if the recipient is currently selected
+      if (currentRecipient === data.from) {
+        displayMessages(history);
+      }
+    } else if (data.type === 'user_list') {
+      updateUserList(data.users); // Update the user list
     } else if (data.type === 'error') {
-      chatroomErrorDiv.textContent = data.message;
+      alert(data.message);
     } else if (data.type === 'rate_limit_exceeded') {
       alert('Rate limit exceeded. Please wait before sending more messages.');
     } else if (data.type === 'heartbeat') {
@@ -69,37 +78,75 @@ function initializeWebSocket() {
   };
 }
 
+// Update the user list in the sidebar
+function updateUserList(users) {
+  userListDiv.innerHTML = ''; // Clear the current list
+  users.forEach((user) => {
+    if (user !== currentUser) {
+      // Don't show the current user in the list
+      const userElement = document.createElement('div');
+      userElement.textContent = user;
+      userElement.style.cursor = 'pointer';
+      userElement.style.padding = '5px';
+      userElement.addEventListener('click', () => switchUser(user));
+      userListDiv.appendChild(userElement);
+    }
+  });
+}
+
+// Switch to a different user's chat
+function switchUser(user) {
+  currentRecipient = user; // Set the recipient
+  messagesDiv.innerHTML = ''; // Clear the chat window
+
+  // Request chat history from the backend
+  socket.send(
+    JSON.stringify({
+      type: 'switch_chat',
+      username: currentUser,
+      recipient: user,
+    })
+  );
+}
+
+// Display messages in the chat window
+function displayMessages(messages) {
+  messagesDiv.innerHTML = ''; // Clear the chat window
+  messages.forEach((msg) => {
+    const messageElement = document.createElement('div');
+    messageElement.textContent = `${msg.from}: ${msg.message}`;
+    messagesDiv.appendChild(messageElement);
+  });
+  messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto-scroll to the bottom
+}
+
 // Send message
 sendBtn.addEventListener('click', () => {
-  const message = messageInput.value;
-  if (message && socket && currentChatroom) {
+  const message = messageBox.value; // Ensure 'messageBox' is correctly defined
+  if (message && socket && currentRecipient) {
+    // Add the message to the chat history for the sender
+    const chatroomName = getChatroomName(currentUser, currentRecipient);
+    const history = chatHistory.get(chatroomName) || [];
+    history.push({ from: currentUser, message }); // Add the sent message to history
+    chatHistory.set(chatroomName, history);
+
+    // Display the updated messages
+    displayMessages(history);
+
+    // Send the message to the backend
     socket.send(
       JSON.stringify({
         type: 'message',
         username: currentUser,
-        chatroomName: currentChatroom,
+        recipient: currentRecipient,
         message,
       })
     );
-    messageInput.value = '';
-  } else {
-    alert('Please join a chatroom and enter a message.');
-  }
-});
 
-// Create/Join Chatroom
-createJoinBtn.addEventListener('click', () => {
-  const chatroomName = chatroomNameInput.value;
-  if (chatroomName && socket && currentUser) {
-    socket.send(
-      JSON.stringify({
-        type: 'join_chatroom',
-        chatroomName,
-        username: currentUser,
-      })
-    );
+    // Clear the message input
+    messageBox.value = '';
   } else {
-    chatroomErrorDiv.textContent = 'Please log in and enter a chatroom name.';
+    alert('Please select a user and enter a message.');
   }
 });
 
