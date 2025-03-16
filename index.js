@@ -1,5 +1,5 @@
 import { createServer } from 'https';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { WebSocketServer } from 'ws';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
@@ -7,12 +7,10 @@ import dotenv from 'dotenv';
 import User from './model/User.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { JSDOM } from 'jsdom';
-import createDOMPurify from 'dompurify';
 
 dotenv.config();
 
-const PORT = 8000;
+const PORT = 5000;
 
 // Load SSL certificates
 const server = createServer({
@@ -38,10 +36,6 @@ const userMessageCounts = new Map();
 
 // Heartbeat interval (in milliseconds)
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
-
-// Initialize DOMPurify
-const { window } = new JSDOM('');
-const DOMPurify = createDOMPurify(window);
 
 // Connect to MongoDB
 mongoose
@@ -83,6 +77,8 @@ function getChatroomName(user1, user2) {
 
 // Function to log chats to a .txt file
 function logChatToFile(chatroomName, messages) {
+  const fs = require('fs');
+  const path = require('path');
   const logFilePath = path.join(
     __dirname,
     'chat_logs',
@@ -98,7 +94,7 @@ function logChatToFile(chatroomName, messages) {
     })
     .join('\n');
 
-  writeFileSync(logFilePath, logContent, 'utf8');
+  fs.writeFileSync(logFilePath, logContent, 'utf8');
   console.log(`Chat logged to ${logFilePath}`);
 }
 
@@ -229,15 +225,12 @@ wss.on('connection', (ws, req) => {
       } else {
         userMessageCounts.set(data.username, count + 1);
 
-        // Sanitize the HTML message
-        const sanitizedMessage = DOMPurify.sanitize(data.message);
-
         // Store the message in chat history
         const chatroomName = getChatroomName(data.username, data.recipient);
         const history = chatHistory.get(chatroomName) || [];
         history.push({
           from: data.username,
-          message: sanitizedMessage,
+          message: data.message,
           file: null,
         });
         chatHistory.set(chatroomName, history);
@@ -249,7 +242,7 @@ wss.on('connection', (ws, req) => {
             JSON.stringify({
               type: 'message',
               from: data.username,
-              message: sanitizedMessage,
+              message: data.message,
             })
           );
         }
@@ -259,7 +252,7 @@ wss.on('connection', (ws, req) => {
           JSON.stringify({
             type: 'message',
             from: data.username,
-            message: sanitizedMessage,
+            message: data.message,
           })
         );
       }

@@ -1,12 +1,7 @@
-import { Picker } from 'emoji-mart';
-import data from '@emoji-mart/data';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-
 let socket;
 let currentUser;
 let currentRecipient;
-const chatHistory = new Map();
+const chatHistory = new Map(); // Map<recipient, Array<{ from: string, message: string, file: Uint8Array | null }>>
 
 // DOM Elements
 const authSection = document.getElementById('auth-section');
@@ -21,90 +16,7 @@ const messagesDiv = document.getElementById('messages');
 const authErrorDiv = document.getElementById('auth-error');
 const userListDiv = document.getElementById('user-list');
 const fileInput = document.getElementById('file-input');
-// DOM Elements for emoji picker and formatting buttons
-const emojiPicker = document.getElementById('emoji-picker');
-const emojiBtn = document.getElementById('emoji-btn');
-const boldBtn = document.getElementById('bold-btn');
-const italicBtn = document.getElementById('italic-btn');
-const linkBtn = document.getElementById('link-btn');
 
-// Initialize Emoji Mart Picker
-const picker = new Picker({
-  data,
-  onEmojiSelect: (emoji) => {
-    messageBox.value += emoji.native; // Insert the selected emoji into the message box
-    emojiPicker.style.display = 'none'; // Hide the picker after selection
-  },
-  dynamicWidth: true, // Allow the picker to adjust its width
-});
-
-// Append the picker to the emoji-picker container
-emojiPicker.appendChild(picker);
-
-// Toggle emoji picker visibility
-emojiBtn.addEventListener('click', () => {
-  emojiPicker.style.display =
-    emojiPicker.style.display === 'none' ? 'block' : 'none';
-});
-
-// Bold formatting
-boldBtn.addEventListener('click', () => {
-  const selectedText = messageBox.value.substring(
-    messageBox.selectionStart,
-    messageBox.selectionEnd
-  );
-  if (selectedText) {
-    const newText = `**${selectedText}**`;
-    messageBox.setRangeText(
-      newText,
-      messageBox.selectionStart,
-      messageBox.selectionEnd,
-      'end'
-    );
-  }
-});
-
-// Italic formatting
-italicBtn.addEventListener('click', () => {
-  const selectedText = messageBox.value.substring(
-    messageBox.selectionStart,
-    messageBox.selectionEnd
-  );
-  if (selectedText) {
-    const newText = `*${selectedText}*`;
-    messageBox.setRangeText(
-      newText,
-      messageBox.selectionStart,
-      messageBox.selectionEnd,
-      'end'
-    );
-  }
-});
-
-// Insert link
-linkBtn.addEventListener('click', () => {
-  const url = prompt('Enter the URL:');
-  if (url) {
-    const text = prompt('Enter the link text:');
-    if (text) {
-      const newText = `[${text}](${url})`;
-      messageBox.setRangeText(
-        newText,
-        messageBox.selectionStart,
-        messageBox.selectionEnd,
-        'end'
-      );
-    }
-  }
-});
-
-// Function to parse and sanitize formatted text
-function formatMessage(text) {
-  // Convert markdown to HTML
-  const html = marked.parse(text);
-  // Sanitize the HTML to prevent XSS attacks
-  return DOMPurify.sanitize(html);
-}
 // Secret key for encryption (must match the backend)
 const secretKey = new Uint8Array(32); // Replace with the actual shared key
 
@@ -179,7 +91,7 @@ function displayFile(fileData, from, mimeType = 'application/octet-stream') {
   messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto-scroll to the bottom
 }
 
-//Display messages and files in the chat window
+// Display messages and files in the chat window
 function displayMessages(messages) {
   messagesDiv.innerHTML = ''; // Clear the chat window
   messages.forEach((msg) => {
@@ -187,12 +99,9 @@ function displayMessages(messages) {
       // Display file
       displayFile(msg.file, msg.from, msg.mimeType);
     } else {
-      // Display text message with formatting
+      // Display text message
       const messageElement = document.createElement('div');
-      messageElement.className = 'message';
-      messageElement.innerHTML = `<strong>${msg.from}:</strong> ${formatMessage(
-        msg.message
-      )}`;
+      messageElement.textContent = `${msg.from}: ${msg.message}`;
       messagesDiv.appendChild(messageElement);
     }
   });
@@ -201,7 +110,7 @@ function displayMessages(messages) {
 
 // Initialize WebSocket connection
 function initializeWebSocket() {
-  socket = new WebSocket('wss://localhost:8000'); // Replace with your backend URL
+  socket = new WebSocket('wss://localhost:5000'); // Replace with your backend URL
 
   socket.onopen = () => {
     console.log('WebSocket connection established');

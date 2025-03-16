@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
   <title>Chat Application</title>
   <style>
     body {
@@ -140,33 +139,6 @@
     #message-input button:hover {
       background-color: #2980b9;
     }
-    /* Emoji picker */
-    #emoji-picker {
-      position: absolute;
-      bottom: 60px;
-      right: 10px;
-      z-index: 1000;
-      display: none; /* Hidden by default */
-    }
-
-    #formatting-buttons {
-      display: flex;
-      gap: 5px;
-      margin-bottom: 10px;
-    }
-
-    #formatting-buttons button {
-      padding: 5px 10px;
-      border: none;
-      background-color: #3498db;
-      color: white;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    #formatting-buttons button:hover {
-      background-color: #2980b9;
-    }
   </style>
 </head>
 <body>
@@ -192,12 +164,6 @@
     <div id="chat-window">
       <div id="messages"></div>
       <div id="message-input">
-        <div id="formatting-buttons">
-          <button id="bold-btn" title="Bold"><b>B</b></button>
-          <button id="italic-btn" title="Italic"><i>I</i></button>
-          <button id="link-btn" title="Insert Link">🔗</button>
-          <button id="emoji-btn" title="Insert Emoji">😀</button>
-        </div>
         <input type="text" id="message-box" placeholder="Type a message...">
         <button id="send-btn">Send</button>
         <input type="file" id="file-input" style="display: none;">
@@ -206,9 +172,6 @@
     </div>
   </div>
 
-  <!-- Emoji Picker -->
-  <div id="emoji-picker"></div>
-  
-  <script type="module" src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

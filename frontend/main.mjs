@@ -20,11 +20,18 @@ function createWindow() {
     },
   });
 
+  // Ignore certificate errors (for development only)
+  mainWindow.webContents.session.setCertificateVerifyProc(
+    (request, callback) => {
+      callback(0); // Bypass certificate validation
+    }
+  );
+
   // Load the index.html file
   mainWindow.loadFile(path.join(__dirname, 'index.html')); // Correct path to index.html
 
   // Open the DevTools (optional)
-  // mainWindow.webContents.openDevTools();
+  mainWindow.webContents.openDevTools();
 
   // Emitted when the window is closed
   mainWindow.on('closed', () => {
