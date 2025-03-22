@@ -12,12 +12,12 @@ import createDOMPurify from 'dompurify';
 
 dotenv.config();
 
-const PORT = 8000;
+const PORT = 5000;
 
 // Load SSL certificates
 const server = createServer({
-  cert: readFileSync('./ssl/certificate.pem'), // Replace with your certificate path
-  key: readFileSync('./ssl/private_key.pem'), // Replace with your private key path
+  cert: readFileSync('../ssl/certificate.pem'), // Replace with your certificate path
+  key: readFileSync('../ssl/private_key.pem'), // Replace with your private key path
 });
 
 // Convert the file URL to a file path

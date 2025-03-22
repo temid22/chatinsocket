@@ -1,7 +1,7 @@
-import { Picker } from 'emoji-mart';
-import data from '@emoji-mart/data';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+// import { Picker } from 'https://cdn.skypack.dev/emoji-mart';
+// import data from 'https://cdn.skypack.dev/@emoji-mart/data';
+// import { marked } from 'https://cdn.skypack.dev/marked';
+// import DOMPurify from 'https://cdn.skypack.dev/dompurify';
 
 let socket;
 let currentUser;
@@ -29,14 +29,23 @@ const italicBtn = document.getElementById('italic-btn');
 const linkBtn = document.getElementById('link-btn');
 
 // Initialize Emoji Mart Picker
-const picker = new Picker({
-  data,
+// const picker = new Picker({
+//   data,
+//   onEmojiSelect: (emoji) => {
+//     messageBox.value += emoji.native; // Insert the selected emoji into the message box
+//     emojiPicker.style.display = 'none'; // Hide the picker after selection
+//   },
+//   dynamicWidth: true, // Allow the picker to adjust its width
+// });
+
+const pickerOptions = {
   onEmojiSelect: (emoji) => {
     messageBox.value += emoji.native; // Insert the selected emoji into the message box
     emojiPicker.style.display = 'none'; // Hide the picker after selection
   },
   dynamicWidth: true, // Allow the picker to adjust its width
-});
+};
+const picker = new EmojiMart.Picker(pickerOptions);
 
 // Append the picker to the emoji-picker container
 emojiPicker.appendChild(picker);
@@ -190,9 +199,8 @@ function displayMessages(messages) {
       // Display text message with formatting
       const messageElement = document.createElement('div');
       messageElement.className = 'message';
-      messageElement.innerHTML = `<strong>${msg.from}:</strong> ${formatMessage(
-        msg.message
-      )}`;
+      messageElement.innerHTML = `<strong>${msg.from}:</strong> 
+      ${formatMessage(msg.message)}`;
       messagesDiv.appendChild(messageElement);
     }
   });
@@ -201,7 +209,7 @@ function displayMessages(messages) {
 
 // Initialize WebSocket connection
 function initializeWebSocket() {
-  socket = new WebSocket('wss://localhost:8000'); // Replace with your backend URL
+  socket = new WebSocket('wss://localhost:5000'); // Replace with your backend URL
 
   socket.onopen = () => {
     console.log('WebSocket connection established');
@@ -225,8 +233,34 @@ function initializeWebSocket() {
       authErrorDiv.textContent = data.error;
     } else if (data.type === 'chat_history') {
       // Load chat history for the selected recipient
-      chatHistory.set(data.chatroomName, data.messages);
-      displayMessages(data.messages);
+      // Decrypt each file message in the chat history
+      const decryptedMessages = await Promise.all(
+        data.messages.map(async (msg) => {
+          if (msg.file) {
+            try {
+              const decryptedFile = await decryptFile(
+                new Uint8Array(msg.file),
+                new Uint8Array(msg.iv),
+                secretKey
+              );
+              return {
+                ...msg,
+                file: decryptedFile,
+                mimeType: msg.mimeType,
+              };
+            } catch (error) {
+              console.error('Decryption error:', error);
+              return msg; // Return original message if decryption fails
+            }
+          } else {
+            return msg;
+          }
+        })
+      );
+      chatHistory.set(data.chatroomName, decryptedMessages);
+      displayMessages(decryptedMessages);
+      // chatHistory.set(data.chatroomName, data.messages);
+      // displayMessages(data.messages);
     } else if (data.type === 'message') {
       // Add the message to the chat history
       const chatroomName = getChatroomName(currentUser, data.from);
@@ -264,7 +298,8 @@ function initializeWebSocket() {
 
       // Display the file if the recipient is currently selected
       if (currentRecipient === data.from) {
-        displayMessages(history);
+        // displayMessages(history);
+        displayFile(decryptedFile, data.from, data.mimeType);
       }
     } else if (data.type === 'user_list') {
       updateUserList(data.users); // Update the user list
@@ -278,6 +313,9 @@ function initializeWebSocket() {
     }
   };
 
+  socket.onerror = (error) => {
+    console.error('WebSocket error:', error);
+  };
   socket.onclose = () => {
     console.log('WebSocket connection closed');
     alert('Connection lost. Please refresh the page.');
@@ -352,19 +390,34 @@ fileInput.addEventListener('change', async (event) => {
     const fileBuffer = await file.arrayBuffer();
     const { iv, encryptedData } = await encryptFile(fileBuffer, secretKey);
 
-    // Add the file to the chat history for the sender
+    // // Add the file to the chat history for the sender
+    // const chatroomName = getChatroomName(currentUser, currentRecipient);
+    // const history = chatHistory.get(chatroomName) || [];
+    // history.push({
+    //   from: currentUser,
+    //   message: null,
+    //   file: Array.from(encryptedData), // Store encrypted data as array
+    //   iv: Array.from(iv), // Store IV as array
+    //   mimeType: file.type,
+    // });
+    // chatHistory.set(chatroomName, history);
+
+    // Immediately display the original file to sender
+    displayFile(new Uint8Array(fileBuffer), currentUser, file.type);
+
+    // Store original file in local history for immediate display
     const chatroomName = getChatroomName(currentUser, currentRecipient);
     const history = chatHistory.get(chatroomName) || [];
     history.push({
       from: currentUser,
       message: null,
-      file: fileBuffer,
+      file: new Uint8Array(fileBuffer), // Store original bytes
       mimeType: file.type,
     });
     chatHistory.set(chatroomName, history);
 
     // Display the updated messages
-    displayMessages(history);
+    // displayMessages(history);
 
     // Send the encrypted file to the backend
     socket.send(
