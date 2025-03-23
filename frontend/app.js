@@ -28,16 +28,6 @@ const boldBtn = document.getElementById('bold-btn');
 const italicBtn = document.getElementById('italic-btn');
 const linkBtn = document.getElementById('link-btn');
 
-// Initialize Emoji Mart Picker
-// const picker = new Picker({
-//   data,
-//   onEmojiSelect: (emoji) => {
-//     messageBox.value += emoji.native; // Insert the selected emoji into the message box
-//     emojiPicker.style.display = 'none'; // Hide the picker after selection
-//   },
-//   dynamicWidth: true, // Allow the picker to adjust its width
-// });
-
 const pickerOptions = {
   onEmojiSelect: (emoji) => {
     messageBox.value += emoji.native; // Insert the selected emoji into the message box
@@ -90,23 +80,6 @@ italicBtn.addEventListener('click', () => {
   }
 });
 
-// Insert link
-linkBtn.addEventListener('click', () => {
-  const url = prompt('Enter the URL:');
-  if (url) {
-    const text = prompt('Enter the link text:');
-    if (text) {
-      const newText = `[${text}](${url})`;
-      messageBox.setRangeText(
-        newText,
-        messageBox.selectionStart,
-        messageBox.selectionEnd,
-        'end'
-      );
-    }
-  }
-});
-
 // Function to parse and sanitize formatted text
 function formatMessage(text) {
   // Convert markdown to HTML
@@ -123,6 +96,54 @@ function getChatroomName(user1, user2) {
   return users.join('-'); // Join with a hyphen
 }
 
+// Encrypt Message with AES
+async function encryptMessage(message, key) {
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+  const encodedMessage = new TextEncoder().encode(message);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-CBC', iv },
+    key,
+    encodedMessage
+  );
+  return { iv, encryptedData: new Uint8Array(encrypted) };
+}
+
+// Decrypt Message with AES
+async function decryptMessage(encryptedData, iv, key) {
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-CBC', iv },
+    key,
+    encryptedData
+  );
+  return new TextDecoder().decode(decrypted);
+}
+
+// Encrypt AES Key with RSA
+async function encryptAESKey(key, publicKey) {
+  const exportedKey = await crypto.subtle.exportKey('raw', key);
+  const encryptedKey = await crypto.subtle.encrypt(
+    { name: 'RSA-OAEP' },
+    publicKey,
+    exportedKey
+  );
+  return new Uint8Array(encryptedKey);
+}
+
+// Decrypt AES Key with RSA
+async function decryptAESKey(encryptedKey, privateKey) {
+  const decryptedKey = await crypto.subtle.decrypt(
+    { name: 'RSA-OAEP' },
+    privateKey,
+    encryptedKey
+  );
+  return await crypto.subtle.importKey(
+    'raw',
+    decryptedKey,
+    { name: 'AES-CBC', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
 // Encrypt file
 async function encryptFile(file, secretKey) {
   const iv = crypto.getRandomValues(new Uint8Array(16)); // Initialization vector
@@ -304,6 +325,7 @@ function initializeWebSocket() {
     } else if (data.type === 'user_list') {
       updateUserList(data.users); // Update the user list
     } else if (data.type === 'error') {
+      chatroomErrorDiv.textContent = data.message;
       alert(data.message);
     } else if (data.type === 'rate_limit_exceeded') {
       alert('Rate limit exceeded. Please wait before sending more messages.');
@@ -389,18 +411,6 @@ fileInput.addEventListener('change', async (event) => {
   if (file && socket && currentRecipient) {
     const fileBuffer = await file.arrayBuffer();
     const { iv, encryptedData } = await encryptFile(fileBuffer, secretKey);
-
-    // // Add the file to the chat history for the sender
-    // const chatroomName = getChatroomName(currentUser, currentRecipient);
-    // const history = chatHistory.get(chatroomName) || [];
-    // history.push({
-    //   from: currentUser,
-    //   message: null,
-    //   file: Array.from(encryptedData), // Store encrypted data as array
-    //   iv: Array.from(iv), // Store IV as array
-    //   mimeType: file.type,
-    // });
-    // chatHistory.set(chatroomName, history);
 
     // Immediately display the original file to sender
     displayFile(new Uint8Array(fileBuffer), currentUser, file.type);
