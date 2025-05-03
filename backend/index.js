@@ -14,6 +14,13 @@ dotenv.config();
 
 const PORT = process.env.PORT || 5000;
 
+// Error handling
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err);
+});
 // Load SSL certificates
 const server = createServer();
 // cert: readFileSync('../ssl/cert.pem'), // Replace with your certificate path
@@ -485,4 +492,13 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`WebSocket server running on wss://0.0.0.0:${PORT}`);
+});
+server.on('request', (req, res) => {
+  if (req.url === '/') {
+    res.writeHead(200);
+    res.end('WebSocket server is running');
+  }
+});
+server.on('error', (err) => {
+  console.error('Server error:', err);
 });
